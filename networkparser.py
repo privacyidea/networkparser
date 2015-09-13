@@ -4,6 +4,9 @@ import netaddr
 from pyparsing import White, Word, alphanums, CharsNotIn
 from pyparsing import Forward, Group, OneOrMore
 from pyparsing import pythonStyleComment
+from pyparsing import Literal, White, Word, alphanums, CharsNotIn
+from pyparsing import Forward, Group, Optional, OneOrMore, ZeroOrMore
+from pyparsing import pythonStyleComment, Regex, SkipTo
 
 
 class Interface(object):
@@ -113,4 +116,154 @@ class Interface(object):
 
 
 class NetworkParser(object):
-    pass
+
+    interface = Word(alphanums)
+    key = Word(alphanums + "-_")
+    space = White().suppress()
+    value = CharsNotIn("{}\n#")
+    line = Regex("^.*$")
+    comment = ("#")
+    method = Regex("loopback|manual|dhcp|static")
+    stanza = Regex("auto|iface|mapping")
+    option_key = Regex("bridge_\w*|post-\w*|up|down|pre-\w*|address"
+                       "|network|netmask|gateway|broadcast|dns-\w*|scope|"
+                       "pointtopoint|metric|hwaddress|mtu|hostname|"
+                       "leasehours|leasetime|vendor|client|bootfile|server"
+                       "|mode|endpoint|dstaddr|local|ttl|provider|unit"
+                       "|options|frame|netnum|media")
+    _eol = Literal("\n").suppress()
+    option = Forward()
+    option << Group(space
+                    #+ Regex("^\s*")
+                    + option_key
+                    + space
+                    + SkipTo(_eol))
+    interface_block = Forward()
+    interface_block << Group(stanza
+                             + space
+                             + interface
+                             + Optional(
+                                    space
+                                    + Regex("inet")
+                                    + method
+                                    + Group(ZeroOrMore(
+                                      option)
+                                    ))
+                             )
+
+    # + Group(ZeroOrMore(assignment)))
+
+    interface_file = OneOrMore(interface_block).ignore(pythonStyleComment)
+
+    file_header = """# File parsed and saved by privacyidea.\n\n"""
+
+    def __init__(self,
+                 infile="/etc/network/interfaces",
+                 content=None):
+        self.filename = None
+        if content:
+            self.content = content
+        else:
+            self.filename = infile
+            self._read()
+
+        self.interfaces = self.get_interfaces()
+
+    def _read(self):
+        """
+        Reread the contents from the disk
+        """
+        f = codecs.open(self.filename, "r", "utf-8")
+        self.content = f.read()
+        f.close()
+
+    def get(self):
+        """
+        return the grouped config
+        """
+        if self.filename:
+            self._read()
+        config = self.interface_file.parseString(self.content)
+        return config
+
+    def save(self, filename=None):
+        if not filename and not self.filename:
+            raise Exception("No filename specified")
+
+        # The given filename overrules the own filename
+        fname = filename or self.filename
+        f = open(fname, "w")
+        f.write(self.format())
+        f.close()
+
+    def format(self):
+        """
+        Format the single interfaces e.g. for writing to a file.
+
+        {"eth0": {"auto": True,
+                  "method": "static",
+                  "options": {"address": "1.1.1.1",
+                              "netmask": "255.255.255.0"
+                              }
+                  }
+        }
+        results in
+
+        auto eth0
+        iface eth0 inet static
+            address 1.1.1.1
+            netmask 255.255.255.0
+
+        :param interface: dictionary of interface
+        :return: string
+        """
+        output = ""
+        for iface, iconfig in self.interfaces.items():
+            if iconfig.get("auto"):
+                output += "auto %s\n" % iface
+
+            output += "iface %s inet %s\n" % (iface, iconfig.get("method",
+                                                               "manual"))
+            # options
+            for opt_key, opt_value in iconfig.get("options", {}).items():
+                output += "    %s %s\n" % (opt_key, opt_value)
+            # add a new line
+            output += "\n"
+        return output
+
+
+    def get_interfaces(self):
+        """
+        return the configuration by interfaces as a dictionary like
+
+        { "eth0": {"auto": True,
+                   "method": "static",
+                   "options": {"address": "192.168.1.1",
+                               "netmask": "255.255.255.0",
+                               "gateway": "192.168.1.254",
+                               "dns-nameserver": "1.2.3.4"
+                               }
+                   }
+        }
+
+        :return: dict
+        """
+        interfaces = {}
+        np = self.get()
+        for idefinition in np:
+            interface = idefinition[1]
+            if interface not in interfaces:
+                interfaces[interface] = {}
+            # auto?
+            if idefinition[0] == "auto":
+                interfaces[interface]["auto"] = True
+            elif idefinition[0] == "iface":
+                method = idefinition[3]
+                interfaces[interface]["method"] = method
+            # check for options
+            if len(idefinition) == 5:
+                options = {}
+                for o in idefinition[4]:
+                    options[o[0]] = o[1]
+                interfaces[interface]["options"] = options
+        return interfaces
