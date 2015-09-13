@@ -1,3 +1,7 @@
+[![Build Status](https://travis-ci.org/privacyidea/networkparser.svg?branch=master)](https://travis-ci.org/privacyidea/networkparser)
+[![Coverage Status](https://coveralls.io/repos/privacyidea/networkparser/badge.svg?branch=master)](https://coveralls.io/github/privacyidea/networkparser?branch=master)
+
+
 Network Config Parser
 =====================
 
