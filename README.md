@@ -2,8 +2,7 @@
 [![Coverage Status](https://coveralls.io/repos/privacyidea/networkparser/badge.svg?branch=master)](https://coveralls.io/github/privacyidea/networkparser?branch=master)
 
 
-Network Config Parser
-=====================
+# Network Config Parser
 
 This is a parser for /etc/network/interfaces to read, understand, modify and save this file.
 
